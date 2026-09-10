@@ -1,0 +1,236 @@
+### API Ecommerce - guía ejecutable
+# Requisitos: .NET 8+ y Docker Desktop con contenedores Linux.
+# 1. docker compose up -d
+# 2. docker compose logs -f sql  (espera "ready for client connections" y pulsa Ctrl+C)
+# 3. dotnet tool install --global dotnet-ef --version 9.0.5  (solo si no está instalado)
+# 4. dotnet ef database update
+# 5. dotnet run --launch-profile http
+# La API queda en http://localhost:5176 y Swagger en http://localhost:5176/swagger.
+# Las migraciones crean la base y ejecutan el seed de roles, usuarios, categorías y productos.
+# Credenciales locales del seed: admin@admin.com / Admin123! y user@user.com / User123!.
+# Ejecuta primero "Login de administrador" para que las solicitudes protegidas reutilicen el JWT.
+# Products y Users son neutrales a versión; se usa v1 como ruta canónica. Categories sí tiene v1 y v2.
+# Las solicitudes de escritura modifican la base local. Ajusta los IDs si ya cambiaste o eliminaste el seed.
+
+@ApiEcommerce_HostAddress = http://localhost:5176
+@apiVersion = 1
+@categoryId = 1
+@productId = 1
+@adminUsername = admin@admin.com
+@adminPassword = Admin123!
+
+### Autenticación y usuarios
+
+# @name adminLogin
+POST {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Users/Login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "{{adminUsername}}",
+  "password": "{{adminPassword}}"
+}
+
+###
+@adminToken = {{adminLogin.response.body.$.token}}
+@adminUserId = {{adminLogin.response.body.$.user.id}}
+
+### Registrar usuario (anónimo; Role admite, por ejemplo, User o Admin)
+# @name registerUser
+POST {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Users
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "cliente.http@example.com",
+  "name": "Cliente HTTP",
+  "password": "Cliente123!",
+  "role": "User"
+}
+
+### Listar usuarios (Admin)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Users
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### Obtener el usuario administrador (Admin)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Users/{{adminUserId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### Categorías v1
+# GET v1 está marcado como obsoleto en el código; para listados nuevos se recomienda v2.
+
+### Listar categorías v1 (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v1/Categories
+Accept: application/json
+
+### Obtener categoría v1 (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v1/Categories/{{categoryId}}
+Accept: application/json
+
+### Crear categoría v1 (Admin)
+# @name createCategoryV1
+POST {{ApiEcommerce_HostAddress}}/api/v1/Categories
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Accesorios HTTP v1"
+}
+
+###
+@createdCategoryV1Id = {{createCategoryV1.response.body.$.id}}
+
+### Actualizar la categoría v1 recién creada (Admin; ejecuta después de Crear categoría v1)
+PATCH {{ApiEcommerce_HostAddress}}/api/v1/Categories/{{createdCategoryV1Id}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Ropa HTTP actualizada"
+}
+
+### Eliminar la categoría v1 recién creada (Admin; ejecuta después de actualizarla)
+DELETE {{ApiEcommerce_HostAddress}}/api/v1/Categories/{{createdCategoryV1Id}}
+Authorization: Bearer {{adminToken}}
+
+### Categorías v2
+# v2 devuelve el listado ordenado por ID; las demás operaciones mantienen el contrato de v1.
+
+### Listar categorías v2 (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v2/Categories
+Accept: application/json
+
+### Obtener categoría v2 (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v2/Categories/{{categoryId}}
+Accept: application/json
+
+### Crear categoría v2 (Admin)
+# @name createCategoryV2
+POST {{ApiEcommerce_HostAddress}}/api/v2/Categories
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Accesorios HTTP v2"
+}
+
+###
+@createdCategoryId = {{createCategoryV2.response.body.$.id}}
+
+### Actualizar la categoría v2 recién creada (Admin; ejecuta después de Crear categoría v2)
+PATCH {{ApiEcommerce_HostAddress}}/api/v2/Categories/{{createdCategoryId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Accesorios HTTP editados"
+}
+
+### Eliminar la categoría v2 recién creada (Admin; ejecuta después de actualizarla)
+DELETE {{ApiEcommerce_HostAddress}}/api/v2/Categories/{{createdCategoryId}}
+Authorization: Bearer {{adminToken}}
+
+### Productos
+# Las lecturas generales son anónimas. Búsquedas, compra y escrituras requieren rol Admin.
+
+### Listar productos (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products
+Accept: application/json
+
+### Obtener producto (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/{{productId}}
+Accept: application/json
+
+### Paginar productos (anónimo)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/Paged?pageNumber=1&pageSize=5
+Accept: application/json
+
+### Buscar productos por categoría (Admin)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/searchProductByCategory/{{categoryId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### Buscar productos por nombre o descripción (Admin)
+GET {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/searchProductByNameDescription/Camiseta
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### Comprar una unidad por nombre (Admin; reduce el stock)
+PATCH {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/buyProduct/Camiseta%20B%C3%A1sica/1
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### Crear producto sin imagen (Admin; multipart/form-data es obligatorio)
+# @name createProduct
+POST {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products
+Authorization: Bearer {{adminToken}}
+Content-Type: multipart/form-data; boundary=ApiEcommerceBoundary
+Accept: application/json
+
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Name"
+
+Teclado Mecánico HTTP
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Description"
+
+Teclado compacto para pruebas de la API
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Price"
+
+89.99
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="SKU"
+
+HTTP-KEY-001
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Stock"
+
+10
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="CategoryId"
+
+2
+--ApiEcommerceBoundary--
+
+###
+@createdProductId = {{createProduct.response.body.$.productId}}
+
+### Actualizar el producto recién creado sin imagen (Admin; ejecuta después de Crear producto)
+PUT {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/{{createdProductId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: multipart/form-data; boundary=ApiEcommerceBoundary
+
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Name"
+
+Teclado Mecánico HTTP Editado
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Description"
+
+Teclado compacto actualizado mediante la API
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Price"
+
+84.99
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="SKU"
+
+HTTP-KEY-001
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="Stock"
+
+8
+--ApiEcommerceBoundary
+Content-Disposition: form-data; name="CategoryId"
+
+2
+--ApiEcommerceBoundary--
+
+### Eliminar el producto recién creado (Admin; ejecuta después de actualizarlo)
+DELETE {{ApiEcommerce_HostAddress}}/api/v{{apiVersion}}/Products/{{createdProductId}}
+Authorization: Bearer {{adminToken}}
